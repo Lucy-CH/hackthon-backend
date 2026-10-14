@@ -1,4 +1,6 @@
 from typing import Annotated
+from unittest import result
+from app.schema.response import ApiResponse
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.schema.address import AddressSearchResponse
 from app.service.address_service import AddressService
-
 
 router = APIRouter(
     prefix="/api/code-tables",
@@ -21,7 +22,7 @@ DbSession = Annotated[
 
 @router.get(
     "/address_list",
-    response_model=AddressSearchResponse,
+    response_model=ApiResponse[AddressSearchResponse],
     summary="搜索香港地址",
 )
 async def search_addresses(
@@ -42,7 +43,7 @@ async def search_addresses(
             description="最多返回多少条结果",
         ),
     ] = 10,
-) -> AddressSearchResponse:
+) -> ApiResponse[AddressSearchResponse]:
     keyword = " ".join(q.split())
 
     if not keyword:
@@ -51,7 +52,9 @@ async def search_addresses(
             detail="搜索关键词不能为空",
         )
 
-    return await AddressService(db).search(
-        keyword=keyword,
-        limit=limit,
-    )
+    result = await AddressService(db).search(
+    keyword=keyword,
+    limit=limit,
+)
+
+    return ApiResponse[AddressSearchResponse](data=result)
