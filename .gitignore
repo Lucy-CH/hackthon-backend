@@ -7,8 +7,25 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
-
-.env
 .venv/
-*.pyc
+
+# Local environment configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Downloaded address data
+/data/
+
+# Development caches and test output
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local logs and macOS metadata
+*.log
+.DS_Store
