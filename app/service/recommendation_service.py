@@ -5,7 +5,7 @@ from sqlalchemy import select
 from app.model.address import Address
 from app.model.rental_listing import RentalListing
 from app.service.base import BaseService
-
+from app.service.emission_service import calculate_commute_emissions
 import httpx
 
 from app.clients.google_routes import GoogleRoutesClient
@@ -147,6 +147,10 @@ class RecommendationService(BaseService):
                     monthly_total = (
                         rental.monthly_rent_hkd + monthly_transport
                     ).quantize(Decimal("0.01"))
+                emissions = calculate_commute_emissions(
+                    route=commute,
+                    commuting_days=COMMUTING_DAYS_PER_MONTH,
+                )
 
                 response.items.append(
                     RecommendationItem(
@@ -157,6 +161,9 @@ class RecommendationService(BaseService):
                         monthly_rent_hkd=rental.monthly_rent_hkd,
                         estimated_monthly_transport_hkd=monthly_transport,
                         estimated_monthly_total_hkd=monthly_total,
+                        estimated_one_way_co2e_kg=emissions.one_way_kg_co2e,
+                        estimated_monthly_co2e_kg=emissions.monthly_kg_co2e,
+                        emission_factor_version=emissions.factor_version,
                         latitude=rental.latitude,
                         longitude=rental.longitude,
                         listing_url=rental.listing_url,

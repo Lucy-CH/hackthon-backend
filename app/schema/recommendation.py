@@ -27,6 +27,11 @@ class RecommendationItem(BaseModel):
     monthly_rent_hkd: Decimal
     estimated_monthly_transport_hkd: Decimal | None = None
     estimated_monthly_total_hkd: Decimal | None = None
+
+    estimated_one_way_co2e_kg: Decimal | None = Field(default=None, ge=0)
+    estimated_monthly_co2e_kg: Decimal | None = Field(default=None, ge=0)
+    emission_factor_version: str
+
     latitude: float
     longitude: float
 
