@@ -21,7 +21,12 @@ def parse_duration(value: str) -> float:
 
 
 def parse_fare(data: dict | None) -> TransitFare | None:
-    if data is None:
+    if not data:
+        return None
+
+    currency = data.get("currencyCode")
+
+    if not isinstance(currency, str) or not currency.strip():
         return None
 
     amount = (
@@ -31,12 +36,11 @@ def parse_fare(data: dict | None) -> TransitFare | None:
 
     if not amount.is_finite() or amount < 0:
         raise ValueError("Invalid transit fare.")
-
+    
     return TransitFare(
-        currency=data["currencyCode"],
+        currency=currency.strip(),
         amount=amount,
     )
-
 
 def parse_step(data: dict) -> CommuteStep:
     details = data.get("transitDetails") or {}
