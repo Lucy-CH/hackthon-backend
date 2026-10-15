@@ -7,6 +7,8 @@ from app.api.addresses import router as address_router
 from app.core.config import web_settings
 from app.core.database import get_engine
 
+from app.api.recommendations import router as recommendation_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,9 +29,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=web_settings.allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
 # 注册地址搜索接口。
 app.include_router(address_router)
+app.include_router(address_router)
+app.include_router(recommendation_router)

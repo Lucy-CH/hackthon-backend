@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
+from pydantic import SecretStr
 
 
 # config.py 位于 app/core/，向上两级就是后端项目根目录。
@@ -54,7 +55,15 @@ class _DBSettings(_BaseSettingsWithEnv):
             database=self.name,
         )
 
+class _GoogleRoutesSettings(_BaseSettingsWithEnv):
+    api_key: SecretStr
+
+    model_config = SettingsConfigDict(
+        env_prefix="GOOGLE_ROUTES_",
+    )
+
 
 common_settings = _CommonSettings()
 web_settings = _WebSettings()
 db_settings = _DBSettings()
+google_routes_settings = _GoogleRoutesSettings()

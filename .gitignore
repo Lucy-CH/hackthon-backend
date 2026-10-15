@@ -29,3 +29,6 @@ htmlcov/
 # Local logs and macOS metadata
 *.log
 .DS_Store
+
+# Local manual API test
+/app/scripts/test_transit_route.py
