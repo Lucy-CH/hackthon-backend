@@ -35,5 +35,4 @@ app.add_middleware(
 
 # 注册地址搜索接口。
 app.include_router(address_router)
-app.include_router(address_router)
 app.include_router(recommendation_router)
