@@ -15,8 +15,13 @@ wheels/
 !.env.example
 !.env.sample
 
-# Downloaded address data
-/data/
+# Ignore data except the two initialization datasets.
+/data/*
+!/data/ALS-GeoJSON.zip
+!/data/rentals/
+
+/data/rentals/*
+!/data/rentals/28hse_rentals.csv
 
 # Development caches and test output
 .pytest_cache/
