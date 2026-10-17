@@ -31,7 +31,7 @@ DbSession = Annotated[
 @router.post(
     "",
     response_model=ApiResponse[RecommendationResponse],
-    summary="Recommend rentals by commute time",
+    summary="Find rentals by budget and commute with optional DeepSeek picks",
 )
 async def recommend_rentals(
     request: RecommendationRequest,

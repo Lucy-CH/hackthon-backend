@@ -243,3 +243,92 @@ The backend image does not include the datasets and does not automatically run m
 - Carbon estimates use UK 2026 transport factors as proxies for Hong Kong, including an urban-rail approximation. They are not measured route emissions.
 - Monthly emissions assume the same route in both directions. Unsupported transport modes or missing segment distances yield unavailable emissions estimates.
 - Recommendations choose the shortest-duration route among those returned for each rental and are initially sorted by commute duration.
+
+## DeepSeek AI rental picks
+
+`POST /api/recommendations` now also returns `data.ai`, while preserving the
+complete `data.items` list and its original commute ordering. AI runs after rent
+filtering and route calculation, within the same HTTP request (not streaming).
+Only rentals with a returned transit route are eligible. No migration is needed.
+
+Configure the backend `.env` (or `.env.prod` for production Compose):
+
+```dotenv
+DEEPSEEK_API_KEY=your_server_side_deepseek_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-flash
+DEEPSEEK_TIMEOUT_SECONDS=20
+DEEPSEEK_MAX_CANDIDATES=50
+```
+
+Restart the backend after configuration. Keep the key on the server; never put it
+in frontend `VITE_*` variables. The implementation uses DeepSeek's
+[JSON Output API](https://api-docs.deepseek.com/guides/json_mode/) through the existing
+httpx dependency with thinking mode disabled for concise, low-latency picks. Model and base URL can be overridden for your DeepSeek account.
+
+Example request (replace the work address ID with a real database ID):
+
+```json
+{
+  "work_address_id": 1,
+  "max_monthly_rent_hkd": 12000,
+  "include_ai": true,
+  "ai_recommendation_count": 2,
+  "preferences": "希望少换乘，步行少一些，优先节省租金"
+}
+```
+
+`include_ai` defaults to `true`; set it to `false` to skip the external AI call.
+`ai_recommendation_count` accepts 1 or 2 (default 2). A single eligible listing
+produces one pick. Preferences are optional and limited to 1,000 characters.
+The budget is **rent only**, not rent plus transport.
+
+Example `data.ai` (illustrative IDs and text):
+
+```json
+{
+  "status": "success",
+  "recommendations": [
+    {"rental_id": 17, "reason": "租金较低且通勤换乘少，符合节省租金的偏好。", "tradeoff": "交通费未知，需要另行确认。"},
+    {"rental_id": 23, "reason": "通勤时间较短，适合优先考虑出行便利。", "tradeoff": "租金相对更高。"}
+  ],
+  "considered_count": 18,
+  "message": null
+}
+```
+
+Frontend integration: match each `recommendations[].rental_id` to `data.items`,
+then display the property together with `reason` and `tradeoff` in that order.
+Render these strings as text, never raw HTML. This backend branch does not change
+the frontend; existing clients continue to display their original listing list.
+
+| `data.ai.status` | Meaning |
+| --- | --- |
+| `success` | Validated AI picks, in recommendation order. |
+| `disabled` | Request has `include_ai: false`. |
+| `not_configured` | Server key is empty; original search still succeeds. |
+| `no_candidates` | No budget-qualified listings with transit routes. |
+| `unavailable` | Upstream timeout/error or invalid AI output; original search still succeeds. |
+
+Failures expose no provider response bodies or secrets. Returned IDs must be
+unique members of the server-selected candidate set and match the requested
+count. Reasons are model-generated and should be checked against listing data.
+No deterministic fallback is presented as an AI recommendation.
+
+To bound latency/context, AI considers at most `DEEPSEEK_MAX_CANDIDATES` listings
+(default 50), alternating fastest-commute and cheapest-rent choices before
+removing duplicates. `considered_count` reports the actual number supplied to AI;
+`data.items` remains complete. Picks are best matches among that shortlist, not a
+guarantee of the globally best rental. The request adds up to the configured AI
+deadline after route calculation. There are no automatic retries.
+
+DeepSeek receives the optional preferences and a compact subset of historical
+listing data (ID, district, rent, commute metrics, cost/emissions estimates and
+fetch date). Exact addresses, coordinates, listing URLs, route geometry and the
+work destination are not sent. Missing estimates remain unknown, not zero.
+
+Run the isolated tests without a database or paid API calls:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```

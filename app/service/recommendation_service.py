@@ -5,6 +5,7 @@ from sqlalchemy import select
 from app.model.address import Address
 from app.model.rental_listing import RentalListing
 from app.service.base import BaseService
+from app.service.ai_recommendation_service import AIRecommendationService
 from app.service.emission_service import calculate_commute_emissions
 import httpx
 
@@ -93,6 +94,8 @@ class RecommendationService(BaseService):
         )
 
         if not rentals:
+            async with httpx.AsyncClient() as http_client:
+                response.ai = await AIRecommendationService().recommend(request, [], http_client)
             return response
 
         # Already checked by get_work_address().
@@ -180,5 +183,10 @@ class RecommendationService(BaseService):
                 item.rental_id,
             )
         )
+
+        async with httpx.AsyncClient() as http_client:
+            response.ai = await AIRecommendationService().recommend(
+                request, response.items, http_client,
+            )
 
         return response
