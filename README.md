@@ -332,3 +332,36 @@ Run the isolated tests without a database or paid API calls:
 ```bash
 uv run python -m unittest discover -s tests -v
 ```
+
+### Side-by-side comparison and overall recommendation
+
+Search responses now include `data.comparison` when AI is enabled. The backend
+compares up to three homes: the AI picks followed by the cheapest remaining
+alternatives. With fewer than two routed homes, no comparison AI call is made.
+This adds a second DeepSeek call after the initial picks; each call has its own
+configured deadline. If comparison AI fails, the factual table still returns.
+
+`POST /api/recommendations/compare` accepts the search fields plus `rental_ids`
+(2–3 distinct IDs). It revalidates IDs against database rent/coordinate filters
+and recalculates routes for those homes only. It does not accept client-provided
+listing metrics. If any selected home has no route, it returns 422 and asks the
+client to search again. No search cache or browser-supplied metrics are trusted.
+
+```json
+{
+  "work_address_id": 1,
+  "max_monthly_rent_hkd": 12000,
+  "preferences": "希望少换乘，优先节省租金",
+  "include_ai": true,
+  "rental_ids": [17, 23, 28]
+}
+```
+
+The response contains `items`, `differences`, `status`, and optional `narrative`.
+Differences are each home minus the first home, computed by backend code.
+Missing inputs produce null differences; emissions with different factor
+versions are not compared. Rent, transit costs and total cost remain distinct.
+`narrative` includes one recommended ID, an overall conclusion and strengths,
+tradeoffs and suitable audience for every compared home. ID coverage is validated.
+AI explanations use qualitative tradeoffs; factual values/differences are rendered
+from backend data. Free-text explanations still require human fact checking.

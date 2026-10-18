@@ -73,6 +73,8 @@ class RecommendationService(BaseService):
     async def recommend(
         self,
         request: RecommendationRequest,
+        rental_ids: list[int] | None = None,
+        build_comparison: bool = True,
     ) -> RecommendationResponse:
         work_address = await self.get_work_address(
             request.work_address_id,
@@ -81,6 +83,12 @@ class RecommendationService(BaseService):
         rentals = await self.find_rental_candidates(
             request.max_monthly_rent_hkd,
         )
+
+        if rental_ids is not None:
+            by_id = {r.id: r for r in rentals}
+            if any(i not in by_id for i in rental_ids):
+                raise ValueError("Selected rentals must exist and be within budget.")
+            rentals = [by_id[i] for i in rental_ids]
 
         # Use the same arrival time for every candidate.
         arrival_time = next_weekday_arrival()
@@ -188,5 +196,18 @@ class RecommendationService(BaseService):
             response.ai = await AIRecommendationService().recommend(
                 request, response.items, http_client,
             )
+
+        if build_comparison and request.include_ai:
+            from app.service.comparison_service import compare_rentals
+            by_id = {i.rental_id: i for i in response.items}
+            selected = [by_id[p.rental_id] for p in response.ai.recommendations if p.rental_id in by_id]
+            # Fill up to three columns with the cheapest remaining alternatives.
+            alternatives = sorted(response.items, key=lambda i: (i.monthly_rent_hkd, i.commute.duration_seconds))
+            for item in alternatives + response.items:
+                if len(selected) >= 3:
+                    break
+                if item.rental_id not in {i.rental_id for i in selected}:
+                    selected.append(item)
+            response.comparison = await compare_rentals(request, selected)
 
         return response

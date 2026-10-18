@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 from typing import Literal
 
@@ -58,6 +58,50 @@ class AIRecommendationResult(BaseModel):
     message: str | None = None
 
 
+class ComparisonRequest(RecommendationRequest):
+    rental_ids: list[int] = Field(min_length=2, max_length=3)
+
+    @model_validator(mode="after")
+    def unique_ids(self):
+        if len(set(self.rental_ids)) != len(self.rental_ids) or any(i <= 0 for i in self.rental_ids):
+            raise ValueError("Choose 2–3 different positive rental IDs.")
+        return self
+
+
+class ComparisonAnalysis(BaseModel):
+    rental_id: int = Field(gt=0, strict=True)
+    strengths: str = Field(min_length=1, max_length=800, pattern=r"\S")
+    tradeoffs: str = Field(min_length=1, max_length=800, pattern=r"\S")
+    suitable_for: str = Field(min_length=1, max_length=500, pattern=r"\S")
+
+
+class ComparisonNarrative(BaseModel):
+    recommended_rental_id: int = Field(gt=0, strict=True)
+    conclusion: str = Field(min_length=1, max_length=1500, pattern=r"\S")
+    analyses: list[ComparisonAnalysis] = Field(min_length=1, max_length=3)
+
+
+class ComparisonDifference(BaseModel):
+    rental_id: int
+    baseline_rental_id: int
+    rent_hkd: Decimal
+    commute_seconds: float
+    transfers: int
+    walking_meters: int | None
+    monthly_transport_hkd: Decimal | None
+    monthly_total_hkd: Decimal | None
+    monthly_co2e_kg: Decimal | None
+
+
+class ComparisonResponse(BaseModel):
+    # Listings and differences always come from backend data, never AI output.
+    items: list[RecommendationItem]
+    differences: list[ComparisonDifference]
+    status: Literal["disabled", "insufficient_candidates", "not_configured", "success", "unavailable"]
+    narrative: ComparisonNarrative | None = None
+    message: str | None = None
+
+
 class RecommendationResponse(BaseModel):
     work_address_id: int
     arrival_time: datetime
@@ -66,6 +110,7 @@ class RecommendationResponse(BaseModel):
     no_route_count: int
 
     items: list[RecommendationItem]
+    comparison: ComparisonResponse | None = None
     ai: AIRecommendationResult = Field(
         default_factory=lambda: AIRecommendationResult(status="disabled"),
     )

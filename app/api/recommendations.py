@@ -56,3 +56,29 @@ async def recommend_rentals(
         ) from exc
 
     return ApiResponse[RecommendationResponse](data=result)
+
+
+from app.schema.comparison import ComparisonRequest, ComparisonResponse
+from app.service.comparison_service import compare_rentals
+
+
+@router.post("/compare", response_model=ApiResponse[ComparisonResponse])
+async def compare_selected_rentals(request: ComparisonRequest, db: DbSession):
+    try:
+        # Re-fetch server data and routes; never trust client-submitted costs or metrics.
+        result = await RecommendationService(db).recommend(
+            request.model_copy(update={"include_ai": False}),
+            rental_ids=request.rental_ids,
+            build_comparison=False,
+        )
+    except WorkAddressNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except GoogleRoutesError as exc:
+        raise HTTPException(status_code=502, detail="The routing service is unavailable.") from exc
+    by_id = {item.rental_id: item for item in result.items}
+    if any(i not in by_id for i in request.rental_ids):
+        raise HTTPException(status_code=422, detail="Some selected homes no longer have transit routes. Search again.")
+    comparison = await compare_rentals(request, [by_id[i] for i in request.rental_ids])
+    return ApiResponse[ComparisonResponse](data=comparison)
