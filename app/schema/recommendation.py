@@ -22,6 +22,19 @@ class RecommendationRequest(BaseModel):
         description="Maximum monthly rent in HKD, excluding transport.",
     )
 
+class RentalDetail(BaseModel):
+    rental_id: int
+    title: str
+    address: str
+    district: str
+    monthly_rent_hkd: Decimal
+    bedrooms: int | None = None
+    saleable_area_sqft: Decimal | None = None
+    property_details: dict[str, str | None] = Field(default_factory=dict)
+    listing_url: str
+    fetched_at: datetime
+
+
 class RecommendationItem(BaseModel):
     rental_id: int
     title: str
@@ -29,6 +42,9 @@ class RecommendationItem(BaseModel):
     district: str
 
     monthly_rent_hkd: Decimal
+    bedrooms: int | None = None
+    saleable_area_sqft: Decimal | None = None
+    property_details: dict[str, str | None] = Field(default_factory=dict)
     estimated_monthly_transport_hkd: Decimal | None = None
     estimated_monthly_total_hkd: Decimal | None = None
 

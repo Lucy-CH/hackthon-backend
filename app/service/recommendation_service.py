@@ -74,7 +74,7 @@ class RecommendationService(BaseService):
         self,
         request: RecommendationRequest,
         rental_ids: list[int] | None = None,
-        build_comparison: bool = True,
+        build_comparison: bool = False,
     ) -> RecommendationResponse:
         work_address = await self.get_work_address(
             request.work_address_id,
@@ -167,6 +167,9 @@ class RecommendationService(BaseService):
                     RecommendationItem(
                         rental_id=rental.id,
                         title=rental.title,
+                        bedrooms=rental.bedrooms,
+                        saleable_area_sqft=rental.saleable_area_sqft,
+                        property_details=rental.property_details or {},
                         address=rental.address,
                         district=rental.district,
                         monthly_rent_hkd=rental.monthly_rent_hkd,

@@ -99,6 +99,12 @@ def convert_row(row: dict[str, str]) -> dict | None:
             else None
         ),
         "bedrooms": bedrooms,
+        "property_details": {
+            key: row.get(key, "").strip()[:4000] or None
+            for key in ("property_type", "bathrooms", "floor", "kitchen_type",
+                        "building_age_years", "estate", "description", "rent_includes",
+                        "subletting", "cooking_method", "sharing_type", "sharing_terms")
+        },
         "latitude": latitude,
         "longitude": longitude,
         "listing_url": row["url"].strip(),
@@ -153,13 +159,25 @@ def read_rentals(path: Path) -> list[dict]:
 
     return rentals
 
-async def import_rentals(rentals: list[dict]) -> None:
+async def import_rentals(rentals: list[dict], update_details: bool = False) -> None:
     if not rentals:
         print("No valid records to import.")
         return
 
     try:
         async with get_session_factory().begin() as session:
+            if update_details:
+                from sqlalchemy import update
+                updated = 0
+                for rental in rentals:
+                    # Explicit backfill only: preserve existing rent, coordinates and snapshot dates.
+                    result = await session.execute(
+                        update(RentalListing).where(RentalListing.listing_id == rental["listing_id"])
+                        .values(property_details=rental["property_details"])
+                    )
+                    updated += result.rowcount
+                print(f"Updated property details: {updated}")
+                return
             statement = (
                 insert(RentalListing)
                 .values(rentals)
@@ -185,6 +203,7 @@ def main() -> None:
     )
     parser.add_argument("--file", type=Path, default=DEFAULT_FILE)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--update-details", action="store_true", help="Update optional property details of existing listings only.")
     args = parser.parse_args()
 
     rentals = read_rentals(args.file)
@@ -206,7 +225,7 @@ def main() -> None:
         )
         return
 
-    asyncio.run(import_rentals(rentals))
+    asyncio.run(import_rentals(rentals, update_details=args.update_details))
 
 if __name__ == "__main__":
     main()

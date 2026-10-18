@@ -363,5 +363,37 @@ Missing inputs produce null differences; emissions with different factor
 versions are not compared. Rent, transit costs and total cost remain distinct.
 `narrative` includes one recommended ID, an overall conclusion and strengths,
 tradeoffs and suitable audience for every compared home. ID coverage is validated.
-AI explanations use qualitative tradeoffs; factual values/differences are rendered
+Comparison AI explanations are in English regardless of the preference language
+and use qualitative tradeoffs; factual values/differences are rendered
 from backend data. Free-text explanations still require human fact checking.
+
+### Rich property details
+
+Apply the new migration and backfill optional CSV attributes for existing rows:
+
+```bash
+uv run alembic upgrade head
+uv run python -m app.scripts.import_rentals --update-details
+```
+
+The explicit backfill updates only `property_details` on matching listing IDs;
+it preserves existing rents, coordinates and snapshot dates. Default imports
+still skip existing IDs. New imports include the optional details automatically.
+The allowlist preserves property type, bathrooms, floor, kitchen type, building
+age, estate, description, rent inclusions, subletting, cooking and sharing terms.
+Bedrooms and saleable area use the existing database fields. Missing values
+remain unknown; listing descriptions are unverified claims.
+
+- `GET /api/recommendations/{rental_id}` returns property facts without a Routes
+  or DeepSeek call. Missing IDs return 404.
+- `POST /api/recommendations/{rental_id}/analysis` takes the usual search request,
+  revalidates rent, recalculates that home's route, and returns an English
+  assessment of strengths, tradeoffs, suitability and overall fit. The full
+  facts remain accessible if route/AI services fail.
+- Search no longer generates a comparison automatically. It returns compact AI
+  picks; comparison and detailed assessment are requested from the detail page.
+  This supersedes the earlier automatic-comparison description above.
+
+Both recommendation and comparison AI now receive bedrooms, saleable area and
+allowlisted optional property data. Narrative output is English. Descriptions
+are length-bounded and treated as untrusted, unverified source claims.
