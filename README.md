@@ -243,3 +243,157 @@ The backend image does not include the datasets and does not automatically run m
 - Carbon estimates use UK 2026 transport factors as proxies for Hong Kong, including an urban-rail approximation. They are not measured route emissions.
 - Monthly emissions assume the same route in both directions. Unsupported transport modes or missing segment distances yield unavailable emissions estimates.
 - Recommendations choose the shortest-duration route among those returned for each rental and are initially sorted by commute duration.
+
+## DeepSeek AI rental picks
+
+`POST /api/recommendations` now also returns `data.ai`, while preserving the
+complete `data.items` list and its original commute ordering. AI runs after rent
+filtering and route calculation, within the same HTTP request (not streaming).
+Only rentals with a returned transit route are eligible. No migration is needed.
+
+Configure the backend `.env` (or `.env.prod` for production Compose):
+
+```dotenv
+DEEPSEEK_API_KEY=your_server_side_deepseek_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-flash
+DEEPSEEK_TIMEOUT_SECONDS=20
+DEEPSEEK_MAX_CANDIDATES=50
+```
+
+Restart the backend after configuration. Keep the key on the server; never put it
+in frontend `VITE_*` variables. The implementation uses DeepSeek's
+[JSON Output API](https://api-docs.deepseek.com/guides/json_mode/) through the existing
+httpx dependency with thinking mode disabled for concise, low-latency picks. Model and base URL can be overridden for your DeepSeek account.
+
+Example request (replace the work address ID with a real database ID):
+
+```json
+{
+  "work_address_id": 1,
+  "max_monthly_rent_hkd": 12000,
+  "include_ai": true,
+  "ai_recommendation_count": 2,
+  "preferences": "希望少换乘，步行少一些，优先节省租金"
+}
+```
+
+`include_ai` defaults to `true`; set it to `false` to skip the external AI call.
+`ai_recommendation_count` accepts 1 or 2 (default 2). A single eligible listing
+produces one pick. Preferences are optional and limited to 1,000 characters.
+The budget is **rent only**, not rent plus transport.
+
+Example `data.ai` (illustrative IDs and text):
+
+```json
+{
+  "status": "success",
+  "recommendations": [
+    {"rental_id": 17, "reason": "租金较低且通勤换乘少，符合节省租金的偏好。", "tradeoff": "交通费未知，需要另行确认。"},
+    {"rental_id": 23, "reason": "通勤时间较短，适合优先考虑出行便利。", "tradeoff": "租金相对更高。"}
+  ],
+  "considered_count": 18,
+  "message": null
+}
+```
+
+Frontend integration: match each `recommendations[].rental_id` to `data.items`,
+then display the property together with `reason` and `tradeoff` in that order.
+Render these strings as text, never raw HTML. This backend branch does not change
+the frontend; existing clients continue to display their original listing list.
+
+| `data.ai.status` | Meaning |
+| --- | --- |
+| `success` | Validated AI picks, in recommendation order. |
+| `disabled` | Request has `include_ai: false`. |
+| `not_configured` | Server key is empty; original search still succeeds. |
+| `no_candidates` | No budget-qualified listings with transit routes. |
+| `unavailable` | Upstream timeout/error or invalid AI output; original search still succeeds. |
+
+Failures expose no provider response bodies or secrets. Returned IDs must be
+unique members of the server-selected candidate set and match the requested
+count. Reasons are model-generated and should be checked against listing data.
+No deterministic fallback is presented as an AI recommendation.
+
+To bound latency/context, AI considers at most `DEEPSEEK_MAX_CANDIDATES` listings
+(default 50), alternating fastest-commute and cheapest-rent choices before
+removing duplicates. `considered_count` reports the actual number supplied to AI;
+`data.items` remains complete. Picks are best matches among that shortlist, not a
+guarantee of the globally best rental. The request adds up to the configured AI
+deadline after route calculation. There are no automatic retries.
+
+DeepSeek receives the optional preferences and a compact subset of historical
+listing data (ID, district, rent, commute metrics, cost/emissions estimates and
+fetch date). Exact addresses, coordinates, listing URLs, route geometry and the
+work destination are not sent. Missing estimates remain unknown, not zero.
+
+Run the isolated tests without a database or paid API calls:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+### Side-by-side comparison and overall recommendation
+
+Search responses now include `data.comparison` when AI is enabled. The backend
+compares up to three homes: the AI picks followed by the cheapest remaining
+alternatives. With fewer than two routed homes, no comparison AI call is made.
+This adds a second DeepSeek call after the initial picks; each call has its own
+configured deadline. If comparison AI fails, the factual table still returns.
+
+`POST /api/recommendations/compare` accepts the search fields plus `rental_ids`
+(2–3 distinct IDs). It revalidates IDs against database rent/coordinate filters
+and recalculates routes for those homes only. It does not accept client-provided
+listing metrics. If any selected home has no route, it returns 422 and asks the
+client to search again. No search cache or browser-supplied metrics are trusted.
+
+```json
+{
+  "work_address_id": 1,
+  "max_monthly_rent_hkd": 12000,
+  "preferences": "希望少换乘，优先节省租金",
+  "include_ai": true,
+  "rental_ids": [17, 23, 28]
+}
+```
+
+The response contains `items`, `differences`, `status`, and optional `narrative`.
+Differences are each home minus the first home, computed by backend code.
+Missing inputs produce null differences; emissions with different factor
+versions are not compared. Rent, transit costs and total cost remain distinct.
+`narrative` includes one recommended ID, an overall conclusion and strengths,
+tradeoffs and suitable audience for every compared home. ID coverage is validated.
+Comparison AI explanations are in English regardless of the preference language
+and use qualitative tradeoffs; factual values/differences are rendered
+from backend data. Free-text explanations still require human fact checking.
+
+### Rich property details
+
+Apply the new migration and backfill optional CSV attributes for existing rows:
+
+```bash
+uv run alembic upgrade head
+uv run python -m app.scripts.import_rentals --update-details
+```
+
+The explicit backfill updates only `property_details` on matching listing IDs;
+it preserves existing rents, coordinates and snapshot dates. Default imports
+still skip existing IDs. New imports include the optional details automatically.
+The allowlist preserves property type, bathrooms, floor, kitchen type, building
+age, estate, description, rent inclusions, subletting, cooking and sharing terms.
+Bedrooms and saleable area use the existing database fields. Missing values
+remain unknown; listing descriptions are unverified claims.
+
+- `GET /api/recommendations/{rental_id}` returns property facts without a Routes
+  or DeepSeek call. Missing IDs return 404.
+- `POST /api/recommendations/{rental_id}/analysis` takes the usual search request,
+  revalidates rent, recalculates that home's route, and returns an English
+  assessment of strengths, tradeoffs, suitability and overall fit. The full
+  facts remain accessible if route/AI services fail.
+- Search no longer generates a comparison automatically. It returns compact AI
+  picks; comparison and detailed assessment are requested from the detail page.
+  This supersedes the earlier automatic-comparison description above.
+
+Both recommendation and comparison AI now receive bedrooms, saleable area and
+allowlisted optional property data. Narrative output is English. Descriptions
+are length-bounded and treated as untrusted, unverified source claims.

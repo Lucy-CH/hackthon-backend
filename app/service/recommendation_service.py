@@ -5,6 +5,7 @@ from sqlalchemy import select
 from app.model.address import Address
 from app.model.rental_listing import RentalListing
 from app.service.base import BaseService
+from app.service.ai_recommendation_service import AIRecommendationService
 from app.service.emission_service import calculate_commute_emissions
 import httpx
 
@@ -72,6 +73,8 @@ class RecommendationService(BaseService):
     async def recommend(
         self,
         request: RecommendationRequest,
+        rental_ids: list[int] | None = None,
+        build_comparison: bool = False,
     ) -> RecommendationResponse:
         work_address = await self.get_work_address(
             request.work_address_id,
@@ -80,6 +83,12 @@ class RecommendationService(BaseService):
         rentals = await self.find_rental_candidates(
             request.max_monthly_rent_hkd,
         )
+
+        if rental_ids is not None:
+            by_id = {r.id: r for r in rentals}
+            if any(i not in by_id for i in rental_ids):
+                raise ValueError("Selected rentals must exist and be within budget.")
+            rentals = [by_id[i] for i in rental_ids]
 
         # Use the same arrival time for every candidate.
         arrival_time = next_weekday_arrival()
@@ -93,6 +102,8 @@ class RecommendationService(BaseService):
         )
 
         if not rentals:
+            async with httpx.AsyncClient() as http_client:
+                response.ai = await AIRecommendationService().recommend(request, [], http_client)
             return response
 
         # Already checked by get_work_address().
@@ -156,6 +167,9 @@ class RecommendationService(BaseService):
                     RecommendationItem(
                         rental_id=rental.id,
                         title=rental.title,
+                        bedrooms=rental.bedrooms,
+                        saleable_area_sqft=rental.saleable_area_sqft,
+                        property_details=rental.property_details or {},
                         address=rental.address,
                         district=rental.district,
                         monthly_rent_hkd=rental.monthly_rent_hkd,
@@ -180,5 +194,23 @@ class RecommendationService(BaseService):
                 item.rental_id,
             )
         )
+
+        async with httpx.AsyncClient() as http_client:
+            response.ai = await AIRecommendationService().recommend(
+                request, response.items, http_client,
+            )
+
+        if build_comparison and request.include_ai:
+            from app.service.comparison_service import compare_rentals
+            by_id = {i.rental_id: i for i in response.items}
+            selected = [by_id[p.rental_id] for p in response.ai.recommendations if p.rental_id in by_id]
+            # Fill up to three columns with the cheapest remaining alternatives.
+            alternatives = sorted(response.items, key=lambda i: (i.monthly_rent_hkd, i.commute.duration_seconds))
+            for item in alternatives + response.items:
+                if len(selected) >= 3:
+                    break
+                if item.rental_id not in {i.rental_id for i in selected}:
+                    selected.append(item)
+            response.comparison = await compare_rentals(request, selected)
 
         return response

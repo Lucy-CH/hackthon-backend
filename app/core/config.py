@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 
 
 # config.py 位于 app/core/，向上两级就是后端项目根目录。
@@ -63,6 +63,17 @@ class _GoogleRoutesSettings(_BaseSettingsWithEnv):
     )
 
 
+class _DeepSeekSettings(_BaseSettingsWithEnv):
+    api_key: SecretStr = SecretStr("")
+    base_url: str = "https://api.deepseek.com"
+    model: str = "deepseek-flash"
+    timeout_seconds: float = Field(default=20, gt=0, le=60)
+    max_candidates: int = Field(default=50, ge=2, le=200)
+
+    model_config = SettingsConfigDict(env_prefix="DEEPSEEK_")
+
+
+deepseek_settings = _DeepSeekSettings()
 common_settings = _CommonSettings()
 web_settings = _WebSettings()
 db_settings = _DBSettings()

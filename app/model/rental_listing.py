@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
@@ -61,6 +62,7 @@ class RentalListing(IDMixin, TimestampMixin, Base):
         Numeric(10, 2),
     )
     bedrooms: Mapped[int | None] = mapped_column(Integer)
+    property_details: Mapped[dict | None] = mapped_column(JSON)
 
     # Coordinates are required for map display and route planning.
     latitude: Mapped[float] = mapped_column(Float)
